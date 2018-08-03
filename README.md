@@ -37,6 +37,7 @@ At the end of this setup the following logins will work:
 For hostbased to work you have to have users on host and client that have the same uid in addition to the host configuration.  May also require the same name, but haven't tested that.
 
 # References
+Took bits of info from these to build the script.
 * https://arc.liv.ac.uk/SGE/howto/hostbased-ssh.html
 * https://docs.oracle.com/cd/E53394_01/html/E54793/sshuser-12.html
 * https://lists.mindrot.org/pipermail/openssh-unix-dev/2015-January/033321.html
