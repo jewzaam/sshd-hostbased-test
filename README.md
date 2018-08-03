@@ -1,5 +1,7 @@
+# Overview
 Create 2 EC2 instances that allow tcp/22 from your laptop and from each other.  Easiest way is allowing 0.0.0.0/0 but that's up to you.  This test is relying on public access and public IP + DNS.
 
+# Setup
 To run the setup you need:
 - host IP address
 - privileged client IP address
@@ -17,6 +19,7 @@ To run the setup:
 
 To revert setup enough so you can run it again, on the host remove the configuration that was added to `/etc/ssh/sshd_config` and `systemctl restart sshd`.
 
+# Outcome
 At the end of this setup the following logins will work:
 - SSH from any client to the host as standard users (not root, not privileged user)
 - SSH from privileged client to the host as privileged user with privatekey
