@@ -21,3 +21,8 @@ At the end of this setup the following logins will work:
 - SSH from any client to the host as standard users (not root, not privileged user)
 - SSH from privileged client to the host as privileged user with privatekey
 
+# References
+https://arc.liv.ac.uk/SGE/howto/hostbased-ssh.html
+https://docs.oracle.com/cd/E53394_01/html/E54793/sshuser-12.html
+https://lists.mindrot.org/pipermail/openssh-unix-dev/2015-January/033321.html
+http://www.ep.ph.bham.ac.uk/general/support/sshtips.html
