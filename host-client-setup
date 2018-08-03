@@ -1,0 +1,89 @@
+#!/bin/sh
+
+HOST_PUBLIC_IP=$1
+CLIENT_PUBLIC_IP=$2
+EC2_IDENTITY_FILE=$3
+PRIVILEGED_USER=$4
+
+HOST_PUBLIC_DNS=`host $HOST_PUBLIC_IP | sed 's/.* \(.*\)[.]/\1/g'`
+CLIENT_PUBLIC_DNS=`host $CLIENT_PUBLIC_IP | sed 's/.* \(.*\)[.]/\1/g'`
+
+alias ssh-host="ssh root@$HOST_PUBLIC_IP -i $EC2_IDENTITY_FILE"
+alias ssh-client="ssh root@$CLIENT_PUBLIC_IP -i $EC2_IDENTITY_FILE"
+
+# put test-host into known hosts of test-client
+ssh-keyscan $HOST_PUBLIC_DNS | ssh-client 'cat > /etc/ssh/ssh_known_hosts'
+
+# set hostname, as sshd is going to check the public IP against the public DNS
+ssh-client "hostname $CLIENT_PUBLIC_DNS"
+
+# setup shosts.equiv, test-host public dns goes on test-client
+echo $HOST_PUBLIC_DNS | ssh-client -- 'cat > /etc/ssh/shosts.equiv'
+
+# setup ssh_config for test-client
+echo "
+# enable keysign, required for user authn with hostbased
+# This must come before HostbasedAuthentication
+EnableSSHKeysign yes
+# enable hostbased
+HostbasedAuthentication yes
+" | ssh-client -- "cat - /etc/ssh/ssh_config > /tmp/foo; mv /tmp/foo /etc/ssh/ssh_config"
+
+# put test-client into known hosts of test-host
+ssh-keyscan $CLIENT_PUBLIC_DNS | ssh-host 'cat > /etc/ssh/ssh_known_hosts'
+
+# set hostname, probably not required but is something the client needs
+ssh-host "hostname $HOST_PUBLIC_DNS"
+
+# setup shosts.equiv, test-client public dns goes on test-host
+echo $CLIENT_PUBLIC_DNS | ssh-host -- 'cat > /etc/ssh/shosts.equiv'
+
+# configure sshd on test-host
+echo "
+# enable hostbased
+HostbasedAuthentication yes
+# disable user known hosts (more secure)
+IgnoreUserKnownHosts yes
+# ignore rhosts
+IgnoreRhosts yes
+# default authentication method is password
+AuthenticationMethods password
+
+# setup the user authorized to use hostbased with publickey
+Match User $PRIVILEGED_USER
+	AuthenticationMethods publickey,hostbased
+
+# setup root.  note hostbased doesn't work with root so it's basically not going to work
+Match User root
+    AuthenticationMethods publickey,hostbased
+" | ssh-host -- "cat >> /etc/ssh/sshd_config"
+
+# enable password authentication in sshd
+ssh-host -- "sed -i 's/PasswordAuthentication no/PasswordAuthentication yes/g' /etc/ssh/sshd_config"
+
+# create privileged user
+for H in ssh-host ssh-client;
+do
+    eval $H -- "groupadd -g 2054 $PRIVILEGED_USER"
+    eval $H -- "useradd -u 2054 -g 2054 $PRIVILEGED_USER"
+    eval $H -- "mkdir -p /home/$PRIVILEGED_USER/.ssh/"
+    eval $H -- "chown -R $PRIVILEGED_USER:$PRIVILEGED_USER /home/$PRIVILEGED_USER/.ssh/"
+done
+
+# create ssh key for $PRIVILEGED_USER on test-client and publish to test-host
+rm /tmp/id_rsa_remote*
+ssh-client -- "rm ~/.ssh/id_rsa_remote*"
+ssh-keygen -f /tmp/id_rsa_remote -N ""
+cat /tmp/id_rsa_remote.pub | ssh-host -- "cat > /home/$PRIVILEGED_USER/.ssh/authorized_keys"
+scp -i $EC2_IDENTITY_FILE /tmp/id_rsa_remote* root@$CLIENT_PUBLIC_DNS:/home/$PRIVILEGED_USER/.ssh/
+ssh-host -- "chown -R $PRIVILEGED_USER:$PRIVILEGED_USER /home/$PRIVILEGED_USER/.ssh/"
+ssh-client -- "chown -R $PRIVILEGED_USER:$PRIVILEGED_USER /home/$PRIVILEGED_USER/.ssh/"
+ssh-client -- "chmod 600 /home/$PRIVILEGED_USER/.ssh/id_rsa_remote.pub"
+
+# restart sshd on test-host (cannot recover if config is messed up)
+#ssh-host -- "systemctl restart sshd"
+# restart sshd on test-host AND remove hostbased auth method from config (reboot host will disable hostbased)
+ssh-host -- "systemctl restart sshd; sed -i 's/,hostbased//g' /etc/ssh/sshd_config"
+
+# verify
+ssh-client -- "su - $PRIVILEGED_USER -c 'ssh $HOST_PUBLIC_DNS -i ~/.ssh/id_rsa_remote -- echo SUCCESS'"
